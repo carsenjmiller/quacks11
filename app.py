@@ -1,34 +1,62 @@
-import os
-from dotenv import load_dotenv
-from flask import Flask, render_template, request, abort
-from twilio.jwt.access_token import AccessToken
-from twilio.jwt.access_token.grants import VideoGrant
+  # ./app.py
+from flask import Flask, render_template, request, jsonify
+from pusher import Pusher
+import uuid
 
-load_dotenv()
-twilio_account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
-twilio_api_key_sid = os.environ.get('TWILIO_API_KEY_SID')
-twilio_api_key_secret = os.environ.get('TWILIO_API_KEY_SECRET')
-
+    # create flask app
 app = Flask(__name__)
 
+    # configure pusher object
+pusher = Pusher(
+  app_id="1071879",
+  key="01fded8f3854f3384d82",
+  secret="14176c52ca7cc1ba5fba",
+  cluster="us2",
+  ssl=True
+)
 
+   # ./app.py
+
+  # index route, shows index.html view
 @app.route('/')
 def index():
-    return render_template('index.html')
+  return render_template('index.html')
 
+  # feed route, shows feed.html view
+@app.route('/feed')
+def feed():
+  return render_template('feed.html')
 
-@app.route('/login', methods=['POST'])
-def login():
-    username = request.get_json(force=True).get('username')
-    if not username:
-        abort(401)
+     # ./app.py
 
-    token = AccessToken(twilio_account_sid, twilio_api_key_sid,
-                        twilio_api_key_secret, identity=username)
-    token.add_grant(VideoGrant(room='My Room'))
+  # store post
+@app.route('/post', methods=['POST'])
+def addPost():
+  data = {
+    'id': "post-{}".format(uuid.uuid4().hex),
+    'title': request.form.get('title'),
+    'content': request.form.get('content'),
+    'status': 'active',
+    'event_name': 'created'
+  }
+  pusher.trigger("blog", "post-added", data)
+  return jsonify(data)
 
-    return {'token': token.to_jwt().decode()}
+  # deactivate or delete post
+@app.route('/post/<id>', methods=['PUT','DELETE'])
+def updatePost(id):
+  data = { 'id': id }
+  if request.method == 'DELETE':
+    data['event_name'] = 'deleted'
+    pusher.trigger("blog", "post-deleted", data)
+  else:
+    data['event_name'] = 'deactivated'
+    pusher.trigger("blog", "post-deactivated", data)
+  return jsonify(data)
 
+  pusher.trigger('a_channel', 'an_event', {'some': 'data'})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+       # ./app.py
+
+      # run Flask app in debug mode
+app.run(debug=True)
